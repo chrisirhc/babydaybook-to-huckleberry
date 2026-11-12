@@ -35,7 +35,10 @@ class _Schema:
     uid_col: str = "uid"  # row identity; fallback "{type}@{start_millis}"
     baby_col: str = "baby_uid"  # filters a multi-child backup
     deleted_col: str = "is_deleted"  # soft-deleted rows are skipped
-    side_col: str = "side"  # breastfeeding side; fallback --default-side
+    side_col: str = "side"  # last breastfeeding side; fallback --default-side
+    left_ms_col: str = "left_duration"  # per-side feeding time in ms; fallback: whole span on one side
+    right_ms_col: str = "right_duration"
+    in_progress_col: str = "in_progress"  # running timers are skipped
     sleep_types: frozenset[str] = frozenset({"sleeping"})
     nursing_types: frozenset[str] = frozenset({"breastfeeding"})
     max_sleep_s: float = 24 * 3600
@@ -171,6 +174,8 @@ def _parse_row(row: sqlite3.Row, cols: frozenset[str], default_side: Side) -> Ev
     is_sleep = raw_type in s.sleep_types or row["g_type"] in s.sleep_types
     if s.deleted_col in cols and row[s.deleted_col]:
         return Skip(key, raw_type, "deleted in Baby Daybook")
+    if s.in_progress_col in cols and row[s.in_progress_col]:
+        return Skip(key, raw_type, "still in progress")
     try:
         span = Interval.of(int(row["start_millis"] or 0), int(row["end_millis"] or 0))
     except ValueError as e:
@@ -189,12 +194,10 @@ def _parse_row(row: sqlite3.Row, cols: frozenset[str], default_side: Side) -> Ev
             side = "right"
         elif "left" in value or value == "l":
             side = "left"
-    seconds = span.seconds
-    return Nursing(
-        key,
-        span,
-        left_s=seconds if side == "left" else 0.0,
-        right_s=seconds if side == "right" else 0.0,
-        last_side=side,
-        notes=notes,
-    )
+    left_s = right_s = 0.0
+    if {s.left_ms_col, s.right_ms_col} <= cols:
+        left_s = (row[s.left_ms_col] or 0) / 1000
+        right_s = (row[s.right_ms_col] or 0) / 1000
+    if left_s <= 0 and right_s <= 0:
+        left_s, right_s = (span.seconds, 0.0) if side == "left" else (0.0, span.seconds)
+    return Nursing(key, span, left_s=left_s, right_s=right_s, last_side=side, notes=notes)

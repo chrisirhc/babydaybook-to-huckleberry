@@ -17,7 +17,7 @@ JAN = int(datetime(2024, 1, 10, 13, tzinfo=UTC).timestamp() * 1000)
 JUL = int(datetime(2024, 7, 10, 13, tzinfo=UTC).timestamp() * 1000)
 
 
-def make_db(path: Path, rows: list[tuple], *, extra_cols: str = ", uid TEXT, side TEXT, is_deleted INTEGER") -> Path:
+def make_db(path: Path, rows: list[tuple], *, extra_cols: str = ", uid TEXT, side TEXT, is_deleted INTEGER, left_duration INTEGER, right_duration INTEGER, in_progress INTEGER") -> Path:
     db = sqlite3.connect(path)
     db.execute(
         "CREATE TABLE daily_actions (type TEXT, start_millis INTEGER, end_millis INTEGER, notes TEXT,"
@@ -32,15 +32,15 @@ def make_db(path: Path, rows: list[tuple], *, extra_cols: str = ", uid TEXT, sid
 
 
 ROWS = [
-    # type, start, end, notes, group_uid, volume, uid, side, is_deleted
-    ("sleeping", JAN, JAN + 2 * H, "nap in crib", "g-nap", None, "u1", None, 0),
-    ("breastfeeding", JAN + 3 * H, JAN + 3 * H + 900_000, None, None, None, "u2", "right", 0),
-    ("breastfeeding", JUL, JUL + 600_000, "", None, None, "u3", None, 0),
-    ("sleeping", JUL, 0, None, "g-nap", None, "u4", None, 0),  # in progress
-    ("sleeping", JUL, JUL + 30 * H, None, "g-nap", None, "u5", None, 0),  # implausible
-    ("breastfeeding", JAN + 3 * H, JAN + 3 * H + 900_000, None, None, None, "u6", "right", 0),  # duplicate
-    ("sleeping", JUL + 5 * H, JUL + 6 * H, None, "g-nap", None, "u7", None, 1),  # deleted
-    ("diaper", JAN, JAN, None, None, None, "u8", None, 0),  # not imported
+    # type, start, end, notes, group_uid, volume, uid, side, is_deleted, left_ms, right_ms, in_progress
+    ("sleeping", JAN, JAN + 2 * H, "nap in crib", "g-nap", None, "u1", None, 0, 0, 0, 0),
+    ("breastfeeding", JAN + 3 * H, JAN + 3 * H + 900_000, None, None, None, "u2", "right", 0, 300_000, 400_000, 0),
+    ("breastfeeding", JUL, JUL + 600_000, "", None, None, "u3", None, 0, 0, 0, 0),
+    ("sleeping", JUL, 0, None, "g-nap", None, "u4", None, 0, 0, 0, 1),  # in progress
+    ("sleeping", JUL, JUL + 30 * H, None, "g-nap", None, "u5", None, 0, 0, 0, 0),  # implausible
+    ("breastfeeding", JAN + 3 * H, JAN + 3 * H + 900_000, None, None, None, "u6", "right", 0, 0, 0, 0),  # duplicate
+    ("sleeping", JUL + 5 * H, JUL + 6 * H, None, "g-nap", None, "u7", None, 1, 0, 0, 0),  # deleted
+    ("diaper", JAN, JAN, None, None, None, "u8", None, 0, 0, 0, 0),  # not imported
 ]
 
 
@@ -54,11 +54,11 @@ def test_read_backup_maps_rows_and_explains_skips(backup: Path) -> None:
     assert [type(e).__name__ for e in report.events] == ["Sleep", "Nursing", "Nursing"]
     sleep, right, left = report.events
     assert isinstance(sleep, Sleep) and sleep.notes == "nap in crib" and sleep.span.seconds == 7200
-    assert isinstance(right, Nursing) and (right.left_s, right.right_s, right.last_side) == (0, 900, "right")
+    assert isinstance(right, Nursing) and (right.left_s, right.right_s, right.last_side) == (300, 400, "right")
     assert isinstance(left, Nursing) and (left.left_s, left.right_s, left.notes) == (600, 0, None)
     reasons = sorted(s.reason for s in report.skipped)
     assert len(reasons) == 4
-    assert any("no end" in r for r in reasons)
+    assert any("in progress" in r for r in reasons)
     assert any("implausible" in r for r in reasons)
     assert any("duplicate" in r for r in reasons)
     assert any("deleted" in r for r in reasons)
