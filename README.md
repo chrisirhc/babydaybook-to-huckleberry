@@ -24,3 +24,8 @@ Notes:
 - The tool writes to Huckleberry's Firestore through a private method of `huckleberry-api`, which is why that dependency is pinned exactly. See `docs/DESIGN.md`.
 
 Tests: `uv run pytest`
+
+## Credits
+
+- [dstran/BabyDayBook](https://github.com/dstran/BabyDayBook): a Flask site that reads the Baby Daybook Android backup. Its SQL queries were our starting point for the backup schema (`daily_actions` and `groups`, millisecond timestamps, `breastfeeding` and `sleeping` types). The current schema was then confirmed against a real backup.
+- [Woyken/py-huckleberry-api](https://github.com/Woyken/py-huckleberry-api) ([PyPI](https://pypi.org/project/huckleberry-api/)): an unofficial, reverse-engineered Python client for Huckleberry's Firebase backend. bdb2hb uses it to log in, and it uses its pydantic models for the shape of the sleep and feed interval documents. We also read how its `log_sleep` and `log_nursing` work to see why we needed fixed document ids and offsets computed per event.
