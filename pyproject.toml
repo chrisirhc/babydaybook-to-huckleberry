@@ -1,0 +1,24 @@
+[project]
+name = "bdb2hb"
+version = "0.1.0"
+description = "Re-runnable import of Baby Daybook sleep and nursing history into Huckleberry"
+requires-python = ">=3.14"
+dependencies = [
+    # Pinned exactly: sink.py uses the private _get_firestore_client and must match the
+    # Firestore document shapes in huckleberry_api.firebase_types. Bump deliberately.
+    "huckleberry-api==0.4.11",
+]
+
+[project.scripts]
+bdb2hb = "bdb2hb.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[build-system]
+requires = ["uv_build>=0.8"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
