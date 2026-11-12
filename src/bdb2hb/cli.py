@@ -55,6 +55,10 @@ def _parser() -> argparse.ArgumentParser:
     imp.add_argument("--until", type=date.fromisoformat, help="only events starting before this local date")
     imp.add_argument("--limit", type=int, help="write at most N pending ops (to try a few first)")
     imp.add_argument("--default-side", choices=("left", "right"), default="left")
+    imp.add_argument(
+        "--include-overlaps", action="store_true", help="also import events that overlap entries already in Huckleberry"
+    )
+    imp.add_argument("--show-overlaps", action="store_true", help="list every overlap, not just the first few")
 
     und = sub.add_parser("undo", help="plan (default) or --write deletion of everything bdb2hb imported")
 
@@ -78,10 +82,15 @@ async def _run(args: argparse.Namespace) -> int:
     async with sink.Huckleberry.connect(email=email, password=password, tz=tz, child=args.child) as hb:
         print(f"\nHuckleberry child: {hb.child.name}")
         existing = await hb.snapshot()
-        plan = sink.plan_import(report.events, existing, tz) if report else sink.plan_undo(existing)
+        plan = (
+            sink.plan_import(report.events, existing, tz, include_overlaps=args.include_overlaps)
+            if report
+            else sink.plan_undo(existing)
+        )
         if getattr(args, "limit", None) is not None:
-            plan = sink.Plan(plan.pending[: args.limit], plan.overlaps)
-        _print_plan(plan, tz)
+            skips = tuple(op for op in plan.ops if op.action == "skip")
+            plan = sink.Plan(plan.pending[: args.limit] + skips, plan.overlaps)
+        _print_plan(plan, tz, all_overlaps=getattr(args, "show_overlaps", False))
         if not args.write:
             print("\nDry run. Nothing was written. Add --write to apply.")
             return 0
@@ -91,7 +100,7 @@ async def _run(args: argparse.Namespace) -> int:
         # Read back and re-plan to confirm the write landed.
         existing = await hb.snapshot()
         if report:
-            check = sink.plan_import(report.events, existing, tz)
+            check = sink.plan_import(report.events, existing, tz, include_overlaps=args.include_overlaps)
             left = len(check.pending)
             print(f"Verify: {left} op(s) still pending" + (" (expected with --limit)" if args.limit else ""))
         else:
@@ -141,7 +150,7 @@ def _print_source(report: SourceReport, tz: ZoneInfo) -> None:
             print(f"    {n:5d}  {reason}")
 
 
-def _print_plan(plan: sink.Plan, tz: ZoneInfo) -> None:
+def _print_plan(plan: sink.Plan, tz: ZoneInfo, *, all_overlaps: bool = False) -> None:
     print("Plan:")
     counts = plan.counts()
     if not counts:
@@ -155,8 +164,10 @@ def _print_plan(plan: sink.Plan, tz: ZoneInfo) -> None:
             for op in sample:
                 print(f"    {op.kind:5s} {_local(op.start, tz)}  {_describe(op)}")
     if plan.overlaps:
-        print(f"\n  {len(plan.overlaps)} imported event(s) overlap entries already in Huckleberry (not touched):")
-        for o in plan.overlaps[:_SAMPLES]:
+        skipping = any(op.action in ("skip", "delete") for op in plan.ops)
+        verb = "skipped (the Huckleberry entry wins)" if skipping else "imported anyway (--include-overlaps)"
+        print(f"\n  {len(plan.overlaps)} event(s) overlap an entry already in Huckleberry of the same type; {verb}:")
+        for o in plan.overlaps if all_overlaps else plan.overlaps[:_SAMPLES]:
             mins = o.theirs_seconds / 60
             print(f"    {o.kind:5s} ours {_local(o.ours_start, tz)}  theirs {_local(o.theirs_start, tz)} ({mins:.0f} min)")
 

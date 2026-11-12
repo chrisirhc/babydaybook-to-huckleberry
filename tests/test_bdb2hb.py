@@ -152,6 +152,27 @@ def test_overlaps_with_manual_entries_are_reported_including_multi_docs(backup: 
     }  # fmt: skip
     plan = sink.plan_import(events, existing, NY)
     assert sorted(o.kind for o in plan.overlaps) == ["feed", "sleep"]
+    # overlapping events are skipped by default; the bottle at the same time as a feed is ignored
+    assert [op.action for op in plan.ops] == ["skip", "create", "skip"]
+    assert len(plan.pending) == 1
+
+    anyway = sink.plan_import(events, existing, NY, include_overlaps=True)
+    assert [op.action for op in anyway.ops] == ["create"] * 3
+
+
+def test_overlap_is_same_type_only_and_removes_earlier_import(backup: Path) -> None:
+    events = source.read_backup(backup).events
+    sleep_start = JAN / 1000
+    # a manual feed in the middle of the imported sleep is not a duplicate of it
+    manual_feed = {"mode": "breast", "start": sleep_start + 600, "leftDuration": 300, "rightDuration": 0}
+    plan = sink.plan_import(events, {"feed": {"manualfeed": manual_feed}}, NY)
+    assert [op.action for op in plan.ops] == ["create"] * 3
+
+    # an earlier import of an event that now overlaps a manual sleep is deleted, so the manual one wins
+    existing = snapshot_after(sink.plan_import(events, {}, NY))
+    existing["sleep"]["a1b2c3d4e5f60718"] = {"start": sleep_start + 1800, "duration": 600, "offset": 300}
+    redo = sink.plan_import(events, existing, NY)
+    assert [op.action for op in redo.ops] == ["delete", "unchanged", "unchanged"]
 
 
 def test_undo_deletes_only_imported(backup: Path) -> None:

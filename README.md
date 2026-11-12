@@ -13,14 +13,14 @@ uv run bdb2hb undo                                 # dry run of deleting everyth
 uv run bdb2hb undo --write
 ```
 
-Options: `--child NAME` (Huckleberry child, needed when there are several), `--baby ID` (Baby Daybook baby in a multi-child backup), `--since/--until YYYY-MM-DD`, `--default-side left|right` (for nursing rows with no side), `--tz`.
+Options: `--child NAME` (Huckleberry child, needed when there are several), `--baby ID` (Baby Daybook baby in a multi-child backup), `--since/--until YYYY-MM-DD`, `--default-side left|right` (for nursing rows with no side), `--include-overlaps`, `--show-overlaps`, `--tz`.
 
 The backup can be the raw SQLite file or a zip containing it. The schema the tool expects is listed in `_SCHEMA` in `src/bdb2hb/source.py`. If `import` reports a schema mismatch, compare it with `inspect` output and edit that one place.
 
 Notes:
 
 - Only email/password Huckleberry accounts can log in, because the library uses Firebase email auth.
-- Every document the tool writes has an id containing `bdb2hb`. Re-runs overwrite those documents in place, and `undo` deletes only them. Entries you logged by hand are never modified. They are only reported when they overlap an imported one.
+- Every document the tool writes has an id containing `bdb2hb`. Re-runs overwrite those documents in place, and `undo` deletes only them. Entries you logged in Huckleberry are never modified. If an imported event overlaps one of the same type (sleep with sleep, breastfeeding with breastfeeding), the Huckleberry entry wins: the event is skipped, and a copy imported earlier is deleted. `--include-overlaps` imports them anyway, and `--show-overlaps` lists them all.
 - The tool writes to Huckleberry's Firestore through a private method of `huckleberry-api`, which is why that dependency is pinned exactly. See `docs/DESIGN.md`.
 
 Tests: `uv run pytest`

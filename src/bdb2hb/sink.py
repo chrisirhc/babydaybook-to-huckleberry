@@ -39,7 +39,7 @@ from huckleberry_api.firebase_types import (
 from bdb2hb.model import Event, Nursing, Sleep, SourceKey
 
 type Kind = Literal["sleep", "feed"]  # root collection; intervals live at {kind}/{cid}/intervals
-type Action = Literal["create", "update", "unchanged", "delete"]
+type Action = Literal["create", "update", "unchanged", "delete", "skip"]
 type Payload = dict[str, Any]
 type Snapshot = Mapping[Kind, Mapping[str, Payload]]  # existing interval docs by kind, then id
 
@@ -62,7 +62,7 @@ class Op:
     doc_id: str
     action: Action
     start: datetime  # UTC, for reporting
-    payload: Payload | None  # None for delete and unchanged
+    payload: Payload | None  # None unless create or update
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +90,7 @@ class Plan:
 
     @property
     def pending(self) -> tuple[Op, ...]:
-        return tuple(op for op in self.ops if op.action != "unchanged")
+        return tuple(op for op in self.ops if op.action not in ("unchanged", "skip"))
 
 
 # ---- pure helpers -----------------------------------------------------------------------------
@@ -182,34 +182,63 @@ def _spans(kind: Kind, docs: Mapping[str, Payload]) -> Iterable[tuple[float, flo
                 yield float(e["start"]), float(e.get("leftDuration") or 0) + float(e.get("rightDuration") or 0)
 
 
-def plan_import(events: Sequence[Event], existing: Snapshot, tz: ZoneInfo, now: float | None = None) -> Plan:
-    """Diff the desired documents against existing ones by id. Pure."""
-    now = time.time() if now is None else now
-    ops: list[Op] = []
-    for event in events:
-        kind, did, payload = to_doc(event, tz, now)
-        have = existing.get(kind, {}).get(did)
-        action: Action = "create" if have is None else "unchanged" if _same(have, payload) else "update"
-        ops.append(Op(kind, did, action, event.span.start, payload if action != "unchanged" else None))
+def _overlaps(events: Sequence[Event], existing: Snapshot) -> dict[int, Overlap]:
+    """For each event index, the first existing entry we did not write that overlaps it.
 
-    overlaps: list[Overlap] = []
+    Only the same type is compared (sleep with sleep, breastfeeding with breastfeeding):
+    a sleep overlapping a feed is normal and not a duplicate."""
+    found: dict[int, Overlap] = {}
     for kind in KINDS:
         theirs = sorted(_spans(kind, existing.get(kind, {})))
         if not theirs:
             continue
         starts = [b0 for b0, _ in theirs]
         longest = max(secs for _, secs in theirs)
-        for event in events:
-            ek: Kind = "sleep" if isinstance(event, Sleep) else "feed"
-            if ek != kind:
+        for i, event in enumerate(events):
+            if _kind(event) != kind:
                 continue
             a0, a1 = event.span.start.timestamp(), event.span.end.timestamp()
             for b0, secs in theirs[bisect_left(starts, a0 - longest - 1) :]:
                 if b0 >= a1:
                     break
                 if b0 + max(secs, 1) > a0:
-                    overlaps.append(Overlap(kind, event.span.start, datetime.fromtimestamp(b0, UTC), secs))
-    return Plan(tuple(ops), tuple(overlaps))
+                    found[i] = Overlap(kind, event.span.start, datetime.fromtimestamp(b0, UTC), secs)
+                    break
+    return found
+
+
+def _kind(event: Event) -> Kind:
+    return "sleep" if isinstance(event, Sleep) else "feed"
+
+
+def plan_import(
+    events: Sequence[Event],
+    existing: Snapshot,
+    tz: ZoneInfo,
+    now: float | None = None,
+    *,
+    include_overlaps: bool = False,
+) -> Plan:
+    """Diff the desired documents against existing ones by id. Pure.
+
+    An event that overlaps an entry already in Huckleberry (one we did not write) is skipped,
+    and a copy imported earlier is deleted, so the Huckleberry entry wins. `include_overlaps`
+    imports them anyway."""
+    now = time.time() if now is None else now
+    overlaps = _overlaps(events, existing)
+    ops: list[Op] = []
+    for i, event in enumerate(events):
+        kind, did, payload = to_doc(event, tz, now)
+        have = existing.get(kind, {}).get(did)
+        action: Action
+        if i in overlaps and not include_overlaps:
+            action = "skip" if have is None else "delete"
+        elif have is None:
+            action = "create"
+        else:
+            action = "unchanged" if _same(have, payload) else "update"
+        ops.append(Op(kind, did, action, event.span.start, payload if action in ("create", "update") else None))
+    return Plan(tuple(ops), tuple(overlaps[i] for i in sorted(overlaps)))
 
 
 def plan_undo(existing: Snapshot) -> Plan:

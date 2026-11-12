@@ -33,7 +33,7 @@ Load-bearing decisions:
 
 - **Document id = hash(kind, SourceKey)** with a `bdb2hb` marker. `SourceKey` is the Baby Daybook row uid, or `type@start_millis` when the schema has no uid column. A full `set()` is then an idempotent upsert, so a crash part-way converges on re-run, and a mapping fix updates documents in place.
 - **The marker contains a non-hex character (`h`)**, so no app- or library-generated hex id can match it. `apply` refuses any op whose id does not match. The tool cannot modify or delete an entry it did not create.
-- **Planning is pure, and the dry run is exact.** `snapshot()` reads every interval document of the child, and read errors raise rather than return partial results. The plan labels each event create, update or unchanged, ignoring `lastUpdated`. It also reports overlaps with entries made by hand, including those inside the app's `multi` container docs, but never touches them.
+- **Planning is pure, and the dry run is exact.** `snapshot()` reads every interval document of the child, and read errors raise rather than return partial results. The plan labels each event create, update or unchanged, ignoring `lastUpdated`. An event that overlaps an entry made in the app, of the same type, is skipped, and an earlier imported copy of it is deleted, so the app entry wins. This includes entries inside the app's `multi` container docs. Sleep overlapping nursing is normal and does not count. `--include-overlaps` turns the skip off.
 - **Offsets are computed at each event's own start and end** in the configured IANA zone, with the library's sign convention (minutes west of UTC).
 - **`prefs.lastSleep` / `lastNursing` are never written.** History is older than live data, and leaving prefs alone keeps undo exact.
 
