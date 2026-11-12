@@ -16,10 +16,10 @@ Coupling to library internals is the one call in `_firestore()`; pyproject pins 
 from __future__ import annotations
 
 import hashlib
-from bisect import bisect_left
 import re
 import time
-from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from bisect import bisect_left
+from collections.abc import AsyncGenerator, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -269,7 +269,9 @@ class Huckleberry:
 
     @classmethod
     @asynccontextmanager
-    async def connect(cls, *, email: str, password: str, tz: ZoneInfo, child: str | None) -> AsyncIterator[Huckleberry]:
+    async def connect(
+        cls, *, email: str, password: str, tz: ZoneInfo, child: str | None
+    ) -> AsyncGenerator[Huckleberry]:
         async with aiohttp.ClientSession() as session:
             api = HuckleberryAPI(email=email, password=password, timezone=tz.key, websession=session)
             await api.authenticate()
@@ -308,7 +310,7 @@ class Huckleberry:
 
     async def _firestore(self):
         """The single touch point with library internals."""
-        return await self._api._get_firestore_client()  # noqa: SLF001  private API, version pinned
+        return await self._api._get_firestore_client()  # private API; version pinned in pyproject
 
 
 async def _resolve_child(api: HuckleberryAPI, wanted: str | None) -> Child:

@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,7 +49,7 @@ _SCHEMA = _Schema()
 
 
 @contextmanager
-def open_backup(path: Path) -> Iterator[sqlite3.Connection]:
+def open_backup(path: Path) -> Generator[sqlite3.Connection]:
     """Read-only connection to a raw SQLite file, or to the single SQLite member of a zip."""
     if not path.exists():
         raise FileNotFoundError(path)

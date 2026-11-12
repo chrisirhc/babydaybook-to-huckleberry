@@ -169,7 +169,9 @@ def _print_plan(plan: sink.Plan, tz: ZoneInfo, *, all_overlaps: bool = False) ->
         print(f"\n  {len(plan.overlaps)} event(s) overlap an entry already in Huckleberry of the same type; {verb}:")
         for o in plan.overlaps if all_overlaps else plan.overlaps[:_SAMPLES]:
             mins = o.theirs_seconds / 60
-            print(f"    {o.kind:5s} ours {_local(o.ours_start, tz)}  theirs {_local(o.theirs_start, tz)} ({mins:.0f} min)")
+            print(
+                f"    {o.kind:5s} ours {_local(o.ours_start, tz)}  theirs {_local(o.theirs_start, tz)} ({mins:.0f} min)"
+            )
 
 
 def _describe(op: sink.Op) -> str:
@@ -183,4 +185,3 @@ def _describe(op: sink.Op) -> str:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

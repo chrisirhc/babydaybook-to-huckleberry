@@ -3,9 +3,11 @@ import uuid
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 from zoneinfo import ZoneInfo
 
 import pytest
+from huckleberry_api import HuckleberryAPI
 from huckleberry_api.firebase_types import FirebaseBreastFeedIntervalData, FirebaseSleepIntervalData
 
 from bdb2hb import sink, source
@@ -17,7 +19,14 @@ JAN = int(datetime(2024, 1, 10, 13, tzinfo=UTC).timestamp() * 1000)
 JUL = int(datetime(2024, 7, 10, 13, tzinfo=UTC).timestamp() * 1000)
 
 
-def make_db(path: Path, rows: list[tuple], *, extra_cols: str = ", uid TEXT, side TEXT, is_deleted INTEGER, left_duration INTEGER, right_duration INTEGER, in_progress INTEGER") -> Path:
+def make_db(
+    path: Path,
+    rows: list[tuple],
+    *,
+    extra_cols: str = (
+        ", uid TEXT, side TEXT, is_deleted INTEGER, left_duration INTEGER, right_duration INTEGER, in_progress INTEGER"
+    ),
+) -> Path:
     db = sqlite3.connect(path)
     db.execute(
         "CREATE TABLE daily_actions (type TEXT, start_millis INTEGER, end_millis INTEGER, notes TEXT,"
@@ -116,13 +125,15 @@ def test_payloads_validate_against_library_models(backup: Path) -> None:
     sleep = plan.ops[0].payload
     assert sleep == {"start": JAN // 1000, "duration": 7200, "offset": 300.0, "end_offset": 300.0,
                      "details": {"notes": "nap in crib"}, "lastUpdated": 1.0}  # fmt: skip
-    assert plan.ops[2].payload["offset"] == 240.0
+    july = plan.ops[2].payload
+    assert july is not None and july["offset"] == 240.0
 
 
-def snapshot_after(plan: sink.Plan) -> dict:
-    out: dict = {"sleep": {}, "feed": {}}
+def snapshot_after(plan: sink.Plan) -> dict[sink.Kind, dict[str, sink.Payload]]:
+    out: dict[sink.Kind, dict[str, sink.Payload]] = {"sleep": {}, "feed": {}}
     for op in plan.ops:
-        out[op.kind][op.doc_id] = dict(op.payload, lastUpdated=99.0)
+        assert op.payload is not None
+        out[op.kind][op.doc_id] = {**op.payload, "lastUpdated": 99.0}
     return out
 
 
@@ -142,7 +153,7 @@ def test_rerun_is_unchanged_and_mapping_fix_is_update(backup: Path) -> None:
 
 def test_overlaps_with_manual_entries_are_reported_including_multi_docs(backup: Path) -> None:
     events = source.read_backup(backup).events
-    existing = {
+    existing: sink.Snapshot = {
         "sleep": {"a1b2c3d4e5f60718": {"start": JAN / 1000 + 1800, "duration": 600, "offset": 300}},
         "feed": {
             "multi1": {"multi": True, "data": {"x": {"mode": "breast", "start": JUL / 1000 + 60,
@@ -193,7 +204,7 @@ class FakeDoc:
     def __init__(self, store: dict, path: tuple) -> None:
         self.store, self.path = store, path
 
-    def collection(self, name: str) -> "FakeCol":
+    def collection(self, name: str) -> FakeCol:
         return FakeCol(self.store, (*self.path, name))
 
 
@@ -242,7 +253,7 @@ class FakeClient:
 async def test_apply_then_snapshot_converges_and_undo_cleans_up(backup: Path, monkeypatch) -> None:
     client = FakeClient()
     client.store[("sleep", "cid", "intervals", "a1b2c3d4e5f60718")] = {"start": 1, "duration": 1, "offset": 0}
-    hb = sink.Huckleberry(api=None, child=sink.Child("cid", "Kid"))  # type: ignore[arg-type]
+    hb = sink.Huckleberry(api=cast(HuckleberryAPI, None), child=sink.Child("cid", "Kid"))
 
     async def fake_firestore():
         return client

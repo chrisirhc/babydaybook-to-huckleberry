@@ -23,7 +23,7 @@ Notes:
 - Every document the tool writes has an id containing `bdb2hb`. Re-runs overwrite those documents in place, and `undo` deletes only them. Entries you logged in Huckleberry are never modified. If an imported event overlaps one of the same type (sleep with sleep, breastfeeding with breastfeeding), the Huckleberry entry wins: the event is skipped, and a copy imported earlier is deleted. `--include-overlaps` imports them anyway, and `--show-overlaps` lists them all.
 - The tool writes to Huckleberry's Firestore through a private method of `huckleberry-api`, which is why that dependency is pinned exactly. See `docs/DESIGN.md`.
 
-Tests: `uv run pytest`
+Checks: `uv run pytest`, `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`
 
 ## Credits
 

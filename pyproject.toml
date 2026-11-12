@@ -13,11 +13,17 @@ dependencies = [
 bdb2hb = "bdb2hb.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.8", "ty>=0.0.1a1"]
 
 [build-system]
 requires = ["uv_build>=0.8"]
 build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "RUF"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
